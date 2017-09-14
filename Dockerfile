@@ -4,6 +4,7 @@ RUN \
     bash \
     curl \
     less \
+    git  \
     groff \
     jq \
     python \
