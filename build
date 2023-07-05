@@ -1,0 +1,104 @@
+#!/bin/bash
+buildx_opt='--platform linux/amd64,linux/arm64'
+
+init () {
+  local opt optarg message
+  while getopts cphv1:2:-: opt; do
+  # OPTARG を = の位置で分割して opt と optarg に代入
+  optarg="$OPTARG"
+  [[ "$opt" = - ]] &&
+    opt="-${OPTARG%%=*}" &&
+    optarg="${OPTARG/${OPTARG%%=*}/}" &&
+    optarg="${optarg#=}"
+
+  case "-$opt" in
+    -1) AWS_V1="$optarg"
+        ;;
+    -2) AWS_V2="$optarg"
+        ;;
+    -p|--push) buildx_opt="$buildx_opt --push"
+        ;;
+    -c|--check) VERSION_CHECK=1
+        ;;
+    -h|--help|-\?) usage
+        ;;
+    -v|--version)
+        show_version
+        exit
+        ;;
+    --)
+        break
+        ;;
+    --*)
+        echo "$0: illegal option -- ${opt##-}" >&2
+        exit 1
+        ;;
+  esac
+  done
+  shift $((OPTIND - 1))
+}
+
+usage () {
+/bin/cat <<END
+usage: $(basename "$0") -c|-1 awsv1_version|-2 [-p]
+requre -1, -2 or -c
+
+-1 awsv1_version: build awscli v1 docker image
+-2 awsv2_version: build awscli v2 docker image
+-c|--check      : check awscli version
+-p|--push       : push docker images
+END
+exit 0
+}
+
+check_version () {
+  check_version_v1
+  check_version_v2
+}
+
+check_version_v2 () {
+  # check awscli v2 version
+  echo checking awscli v2 version
+  docker build -t ywatase/dind-awscli .
+  AWS_V2=$(docker run -t ywatase/dind-awscli aws --version | awk '{print $1}' | sed -e 's#aws-cli/##')
+
+  echo "AWSv2: $AWS_V2"
+}
+
+check_version_v1 () {
+  # check awscli v1 version
+  echo checking awscli v1 version
+  curl -sS -O https://s3.amazonaws.com/aws-cli/awscli-bundle.zip
+  AWS_V1=$(zipinfo awscli-bundle.zip \
+    | grep -oE 'awscli-([0-9\.]*).tar.gz' \
+    | sed -e 's#.tar.gz##' -e 's#awscli-##')
+  rm awscli-bundle.zip
+
+  echo "AWSv1: $AWS_V1"
+}
+
+init "$@"
+
+if [ -n "$VERSION_CHECK" ] ; then
+  check_version
+  exit
+fi
+
+if [ -z "$AWS_V1" ] && [ -z "$AWS_V2" ]; then
+  usage
+fi
+
+if [ -n "$AWS_V1" ] ; then
+  # shellcheck disable=SC2086
+  docker buildx build $buildx_opt -t ywatase/dind-awscli:awscli-${AWS_V1} \
+    --build-arg awscli_version=${AWS_V1} -f Dockerfile.awscli-1.x .
+  # shellcheck disable=SC2086
+  docker buildx build $buildx_opt -t ywatase/dind-awscli:latest \
+    --build-arg awscli_version=${AWS_V1} -f Dockerfile.awscli-1.x .
+fi
+if [ -n "$AWS_V2" ] ; then
+  # shellcheck disable=SC2086
+  docker buildx build $buildx_opt -t ywatase/dind-awscli:awscli-${AWS_V2} .
+fi
+
+# vim: set ft=sh ts=2 sw=2 et:

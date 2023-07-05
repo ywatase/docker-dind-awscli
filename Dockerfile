@@ -7,9 +7,7 @@ RUN \
     git  \
     groff \
     jq \
-    python \
-    py-pip \
-    py2-pip && \
-    pip install --upgrade pip awscli s3cmd && \
-    apk --purge -v del py-pip py2-pip && \
+    aws-cli \
+    s3cmd \
+    && \
     rm /var/cache/apk/*
